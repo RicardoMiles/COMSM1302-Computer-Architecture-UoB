@@ -5,7 +5,7 @@
 * A register is the unique register could load value directly
 * Program counter hold the number of ROM address of next instruction would be executed by CPU
 * Variable - store RAM address - mapping A register
-* Lable - ROM address
+* label - ROM address
 * Execute instruction first, then PC changed. E.g. When the CPU is executing the second instruction, the PC currently is 1, after executing, it +1
 * R0 - R15  are called virtual registers
 * @var is sensible about Capitalized variable identifier
@@ -152,16 +152,100 @@ The pixel at Row `r` Column `c` is controlled by the `(c%16)`th bit from the rig
 * Modern computer use Von ISA more
 * PC A M -> special purpose registers
 * D -> general purpose register
-* 
 
 ### Addressing Mode
 * Immediate Addressing: Interpret oprand as data
 * Direct Addressing: Interpret operand as the position of data
 * Indirect Addressing : Interpret operand as the position of the pointer which points to the data
 * E.g. @num -> immediate addressing
-* E.g. @lable ->direct addressing
+* E.g. @label ->direct addressing
 * E.g.   Firstly, @5; then,M = 1;
-* It depends give what to A register, @num give number to A, @lable parse the address of lable and give address to A, @num then manipulate M, give A the address of pointer, A is the pointer of M
+* It depends give what to A register, @num give number to A, @label parse the address of label and give address to A, @num then manipulate M, give A the address of pointer, A is the pointer of M
+
+### Pipeline and stall
+Stall aka bubble, three harzard leads to stall
+* Data hazard
+* Conditional hazard
+* Structural hazard
+
+All the rest of pipline will stall until the conflict instruction executed.
+
+Pipeline of Hack C-instructions fetch-exectute 
+* 4 stages of  it: Fetch; Decode; Execute; Writeback
+* we can set the clock speed to the propagation delay of the slowest stage, rather than of the entire fetch-execute cycle!
+
+### Compiler - Lexing
+* Use an assembler to turn assembly into machine code.
+* Lexing converts source code text into a list of tokens
+* Parsing analyze the structure of tokens, also known as analyze syntax
+* IR - Intermediate representation
+* Hack assembler has only two step: parsing and lexing
+* On lexing stage, labels are recorded in symbol table; but, label itself will not be converted to token
+* Your lexer will also handle labels, which would normally be part of semantic analysis
+* 对于每一行： 
+    * 移除所有注释和空白。
+    * 如果该行为空，则跳过。
+    * 如果该行是一个标签，将其添加到符号表中，并记录当前行对应的 ROM 地址。
+    * 否则，将该行分解为标记并输出到一个临时文件中。
+
+### Assember - demand
+Assembler todo list: 
+* 为每一个变量分配一个对应的RAM地址，从16开始。
+* 用RAM地址替换变量
+* 为每个标签分配一个ROM中的地址，这个ROM地址和标签出现的机器代码行相对应
+* 用ROM地址替换标签
+* 完成上述步骤，才将@语句替换成A指令
+* 由Symbol Table 来完成上述操作，在汇编过程中，跟踪程序使用的所有标签和便来年个的地址
+* Filling the symbol table 和 lexing 以及parsing同步进行
+
+![image](https://github.com/user-attachments/assets/3c2c9f47-e8ae-4c58-836e-b065e62d779f)
+
+### Identifier and symbol tables
+* In Hack, identifiers are labels and and variables.
+* Symbol table is a data structure mapping the names of identifiers to their meaning
+* In Hack, we will have one symbol table for labels (mapping each label name to its ROM address) and one for variables (mapping each variable name to its RAM address).
+* Both the label and variable tables start empty.
+
+### Working mechanism of symbol table
+In parsing, for each identifier we find, we check the symbol tables:
+* If it’s in the label table, hooray — substitute in the ROM address.
+* If it’s in the variable table, hooray — substitute in the RAM address.
+* If it’s in neither table, it must be the first occurrence of some variable. So we add it to the variables table with the first unassigned RAM address.
+
+### Compiler - Parsing
+* The goal of parsing is to convert a list of tokens into a parse tree or concrete syntax tree (CST) which gives its BNF structure.
+
+![image](https://github.com/user-attachments/assets/d80f873f-ef02-4048-adb5-ce878736a66c)
+
+## LL parsing
+* go through tokens from left to right
+* build CST from the top down 
+* Process
+    * 如果⟨指令⟩以 '@' 标记开头：
+        * 如果使用了一个新变量，分配 RAM 并将其添加到符号表中。
+        * 如果使用了一个现有变量或标签，从符号表中检索相应的 RAM/ROM 地址。
+        * 生成并输出相应的 A-指令。
+    * 否则：
+        * 将其分解为一个赋值、一个计算和一个条件。
+        * 将这些分配到适当的 dest、comp 和 jump 值。
+        * 生成并输出相应的 C-指令。
+
+### BNF
+* Programmers express grammars in Backus-Naur Form (BNF), and usually just understanding BNF is enough.
+* A context-free grammar (or just grammar) is a way of quickly and rigorously specifying which strings in a language have valid syntax.
+* 上下文无关文法：这是一种用于定义编程语言或自然语言语法的数学系统。与上下文相关的文法不同，上下文无关文法的规则不依赖于字符周围的上下文。
+* Anything we define as part of the grammar must be enclosed in ⟨⟩s. We call these **non-terminal symbols**. Anything else (e.g. ‘lecturer’) is a **terminal symbol** or **token**.
+
+![image](https://github.com/user-attachments/assets/a5fe5a92-37a9-4d67-af6d-f75aec592590)
+
+* BNF allows recursion.
+* The goal of parsing is to convert a list of tokens into a parse tree or concrete syntax tree (CST) which gives its BNF structure.
+
+### EBNF for Hack assembly
+
+![image](https://github.com/user-attachments/assets/b10968ad-02d3-4507-9325-8ab0e65f2887)
+
+
 
 ## Quiz Error Book
 ### Quiz 5
