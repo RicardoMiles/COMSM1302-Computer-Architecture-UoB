@@ -145,7 +145,66 @@ Both counting from 0
 
 The pixel at Row `r` Column `c` is controlled by the `(c%16)`th bit from the right at address `0x4000 + 32r + (c/16)`
 
-## 
+### Hack ISA
+* Instruction length is always multiple word size
+* Havard -> 2 separate memory bank, separate data and instruction
+* Von ->  data and instructions stores at same memory
+* Modern computer use Von ISA more
+* PC A M -> special purpose registers
+* D -> general purpose register
+* 
+
+### Addressing Mode
+* Immediate Addressing: Interpret oprand as data
+* Direct Addressing: Interpret operand as the position of data
+* Indirect Addressing : Interpret operand as the position of the pointer which points to the data
+* E.g. @num -> immediate addressing
+* E.g. @lable ->direct addressing
+* E.g.   Firstly, @5; then,M = 1;
+* It depends give what to A register, @num give number to A, @lable parse the address of lable and give address to A, @num then manipulate M, give A the address of pointer, A is the pointer of M
+
+## Quiz Error Book
+### Quiz 5
+![image](https://github.com/user-attachments/assets/827b266c-6462-49c5-aacb-37379a6515c6)
+
+![image](https://github.com/user-attachments/assets/7bb012ee-7b8f-427a-9dec-701d2969686f)
+
+* Binary Operation must have two registers , so A could not add itself
+* C-instruction could also do assignment, but only 0, 1, -1
+* option F is definitely invalid because binary operation's operands should including D register
+
+![image](https://github.com/user-attachments/assets/4140f26f-2f97-4a2a-b20f-754b1ff014fa)
+```
+@list_start
+D = M
+@49
+D = D + A
+A = D
+```
+
+### Quiz 6
+![image](https://github.com/user-attachments/assets/7a4cb3f7-cf7a-4f8e-aa55-aabd34e5aa79)
+
+![image](https://github.com/user-attachments/assets/aa38f61f-9032-4534-9a1e-9e51008a803f)
+
+* 微架构是计算机硬件的物理设计——电路图和 PCB 布局。
+* 指令集架构 (ISA) 是计算机响应机器代码指令的方式。
+* 因此，字长、内存地址空间和支持的寻址模式都是 ISA 的属性。时钟速度、使用的晶体管数量和能效都是微架构的属性。
+* C 指令有 3 个操作数：comp、jump 和 dest。
+
+
+
+### Quiz 7
+
+
+### Quiz 8
+
+
+### Quiz 9
+
+
+### Mock Theory
+
 
 
 
