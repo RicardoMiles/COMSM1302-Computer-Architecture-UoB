@@ -245,7 +245,10 @@ In parsing, for each identifier we find, we check the symbol tables:
 
 ![image](https://github.com/user-attachments/assets/b10968ad-02d3-4507-9325-8ab0e65f2887)
 
+### Track scope
+作用域 - 是一张又一张独立的symbol table
 
+###
 
 ## Quiz Error Book
 ### Quiz 5
@@ -275,11 +278,12 @@ A = D
 * 指令集架构 (ISA) 是计算机响应机器代码指令的方式。
 * 因此，字长、内存地址空间和支持的寻址模式都是 ISA 的属性。时钟速度、使用的晶体管数量和能效都是微架构的属性。
 * C 指令有 3 个操作数：comp、jump 和 dest。
-
-
+* In absence of stalls, a pipelined CPU average one clock cycle per instruction executed. 时钟周期是最快指令执行的市场，也许同步干别的但真正干完且能干完的只有且仅有一条最短的 instruction
 
 ### Quiz 7
-
+* printf in C is a identifier just because it is defined by lib stdio.h
+* A parse tree is the same thing as a CST, but not an AST.
+* CST 拆解语法树的时候，没有括号不要多心去考虑结合变号问题，都会在BNF定义好的，唯一参考是BNF，照着BNF去拆
 
 ### Quiz 8
 
