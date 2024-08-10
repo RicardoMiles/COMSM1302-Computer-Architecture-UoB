@@ -1,0 +1,15 @@
+call exam.test 3
+function exam.test 6
+label LOOPSTART
+push constant 3
+pop local 2
+push constant 3080
+pop pointer 0
+push this 3
+push argument 5
+pop static 0
+lt
+if-goto LOOPSTART
+push local 3
+sub 
+return
