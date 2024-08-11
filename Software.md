@@ -487,7 +487,7 @@ In parsing, for each identifier we find, we check the symbol tables:
   - 在函数返回时，SP会被重置回ARG + n的位置，其中n是函数返回值的数量（通常是1）
 
 
- 
+
 
 * 在函数调用时，`**ARG**`会被设置为`**SP - n - 5**`的位置，其中`**n**`是传递给函数的参数数量。”-5”是因为在推入参数之前，栈中已经包含了保存的`**LCL**`、`**ARG**`、`**THIS**`和`**THAT**`，以及返回地址。
 
@@ -526,6 +526,50 @@ In parsing, for each identifier we find, we check the symbol tables:
 ```
 
 
+
+### Hack Jack Memory
+
+* Memory.alloc
+
+* Memory.deAlloc
+
+* Sys.init
+
+* From inside a method definition, the fields of the class variable act as local variables. (This replaces C-style myFoo.x syntax.) The class variable itself can also be accessed via the this keyword, and `methodCall()` is interpreted as `this.methodCall()`.
+
+* both constructors and functions must start with the name of the class. So e.g. let `myFoo = Foo.makeFoo();` is valid Jack code, but let `myFoo = makeFoo(); `is not.
+
+* 在Jack中，通常会为类定义一个名为 `dispose` 的方法，用于在完成对象的其他清理操作后，调用 `Memory.deAlloc(this)` 以释放该对象所占用的内存。
+
+* In Jack, all class-type variables are stored on the heap — only ints, chars and booleans are stored on the stack.  all of these variables are stored as pointers
+
+* The expression `my object[i]` means: go to `the address of my object`, add `i` to it, and return the result.
+
+* **A backdoor into memory**:  For example, the code 
+
+  ```
+  var int x; 
+  let x = 16384; 
+  let x[0] = 0
+  ```
+
+  will set RAM[0x4000] to zero.
+
+* 在Jack语言中，每个文件只包含一个类的声明。
+
+* 文件名为 `Foo.jack` 的文件应包含名为 `Foo` 的类，以及该类的所有字段、方法等内容。
+
+* 在C语言中那些不与结构体关联的部分（例如全局变量和函数）在Jack中应该放在 `Main` 类中。
+
+* 每个Jack程序都会从调用 `Main.main()` 函数开始运行， `Main.main()` 就像C语言中 `main` 函数的对应部分。
+
+* 每个Jack文件都会被单独编译为Hack VM的代码。
+
+* 之后，这些生成的 `.vm` 文件可以通过VM翻译器合并成一个Hack汇编文件，再由汇编器编译成Hack机器码。
+
+* Jack文件可以使用在其他Jack文件中定义的类。
+
+* 编译器会假设这些类可用，并且假设所使用的方法也会存在。
 
 ### Binary Multiply Assembly
 
