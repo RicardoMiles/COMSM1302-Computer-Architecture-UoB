@@ -601,6 +601,138 @@ In parsing, for each identifier we find, we check the symbol tables:
 
   * **Pointer and Constant Segments**:
     - `pointer` 和 `constant` 段的用途已经很明确：`pointer` 用于处理内存指针，`constant` 用于处理常量值。
+  * 在 Hack VM 中，控制流是通过 goto 和 label 实现的。因此，当你开始编译一个 while 语句时，你首先需要生成两个唯一的标签，以标记循环的开始和结束位置。例如，while_start_4 可以表示循环的起点，while_end_4 可以表示循环的终点。
+  * 在 Hack VM 中，控制流是通过 goto 和 label 实现的。因此，当你开始编译一个 while 语句时，你首先需要生成两个唯一的标签，以标记循环的开始和结束位置。例如，while_start_4 可以表示循环的起点，while_end_4 可以表示循环的终点。
+  * 使用 advance_tag 来移动到 ⟨expression⟩，并调用 compile_expression 函数，将条件表达式编译成 VM 代码。这个表达式的结果会被推入栈中。
+  * 输出 not 指令（用于取反表达式的结果），然后输出 if-goto while_end_4。这意味着如果条件表达式为假（即结果为 0），则跳转到 while_end_4 标签处，结束循环。
+  * 使用 advance_tag 移动到循环体的 ⟨statements⟩，并调用 compile_statements 来编译循环体中的所有语句。
+  * 输出 goto while_start_4，这会使程序跳转回循环的起点，再次检查条件。然后输出 label while_end_4，标记循环的结束位置。
+  * 最后，使用 advance_tag 跳过 ‘}’ 和 </whileStatement> 标签，并从 compile_while 函数返回。此时，整个 while 语句的 VM 代码已经生成完毕。
+
+![image](https://github.com/user-attachments/assets/3baa404c-5978-4bb8-b17f-740fa1c7451b)
+
+![image](https://github.com/user-attachments/assets/4179e9e2-5707-4f4e-99f2-0197fdf26d8b)
+
+* 当编译器遇到子程序调用时，它需要将传递给子程序的所有参数（表达式）压入栈中。接着，生成一个 `call` 指令，调用对应的子程序（例如 `myClass.mySub`）。这样，程序在运行时会正确地跳转到子程序并使用提供的参数。
+
+* 当编译器处理子程序的参数列表和局部变量声明时，它会建立一个符号表来跟踪这些变量。在实际生成代码时，符号表会帮助编译器将这些变量替换为具体的本地变量和参数，并确保它们在子程序体中被正确引用
+
+* 当子程序需要返回时，编译器需要将返回值（如果有的话）压入栈中。如果没有返回值，则压入一个虚拟值以占位。然后，编译器生成一个 return 指令，使程序能够正确返回到调用子程序的地方。
+
+* `doStatement` 通常用来调用子程序，但由于它不关心返回值，因此在调用之后，返回值仍然留在栈上。如果不处理，这会导致栈上的“内存泄漏”（即不必要的数据残留在栈中）。因此，编译器需要插入一个指令（例如 `pop temp 0`）来清除栈顶数据。
+
+![image](https://github.com/user-attachments/assets/23c2db8c-9e6d-4790-8df8-683b950c9d97)
+
+### Symbol table generating in Jack to VM
+* 符号表的创建：
+  * 在编译一个类时，当编译器遇到类的开头标签（即 ⟨class⟩）时，会为该类创建一个新的符号表。这个符号表用于跟踪类中的所有字段和静态变量。
+
+* 字段和静态变量的条目：
+  * 每个 classVarDec（类变量声明）中声明的变量都会在符号表中添加一个条目。field 变量和 static 变量分别分配不同的偏移量，以确保它们在内存中的位置是唯一的和有序的。这些偏移量将用于生成代码时访问这些变量。
+
+* 使用符号表生成代码：
+  * 在处理类中的子程序声明（⟨subroutineDec⟩）时，编译器会使用之前创建的类符号表来正确生成访问类变量的代码。这确保了子程序中对类字段和静态变量的访问是正确的。
+
+* 符号表的释放：
+  * 当编译器遇到类的结束标签（⟨class⟩）时，类的符号表就不再需要了，因此会被释放。这是一种资源管理的做法，确保符号表只在需要的时候存在。
+
+### Jack details 2
+* In Jack, every object is a pointer-based array. 
+* Example code for comprehensino
+
+```
+var Foo myFoo;
+//Code to initialise myFoo
+Output.PrintInt(myFoo);
+```
+
+it will print the RAM address at which myFoo is stored
+
+* If Class Foo has fields x,y and z, defined in that order, then the object myFoo will be like:
+  * myFoo.x is stored at RAM[myFoo];
+  * myFoo.y is stored at RAM[myFoo+1],and
+  * myFoo.z is stored at RAM[myFoo+2]
+
+* myFoo[i] == RAM[myFoo + i]
+* in the example above, myFoo[2] will evaluate to myFoo.z
+* All object fields in Jack are allocated on the heap, but the pointer Foo is stored on the stack like any other var
+* 为简单起见，Jack 中的所有对象字段都在堆上分配。指针 `Foo` 像其他变量一样存储在栈上。
+* 我们将确保 `this 0` 始终存储在当前对象所指向的地址。如果我们能做到这一点，那么 Jack 中的 `this[i]` 将始终映射到 Hack VM 中的 `this i`。
+* 在编译 ⟨subroutineCall⟩ 时，我们必须：
+  * 仅对于方法：将当前对象压入栈中（并将其添加到符号表中）作为新的第一个参数，然后再编译 ⟨expressionList⟩ 的其他参数。相应地调整生成的 VM call 命令。
+  *     编译器需要能够区分方法调用和普通的子程序调用。这可以通过检查是否有 `.` 来实现，`.` 左边的标识符通常是对象实例而不是类名。
+
+* Compile declaration for subFunction
+  * For method , set point 0 to the base addresss of current object, aka argument 0
+  * For constructor, call `Memory.alloc` to allocate segment for object, use Symbol table to confirm the size it should be allocated. Set point 0 to the base address of new allocated object
+
+* 无论是方法还是构造函数，都应避免在子程序体内更改 `pointer 0` 的值。`pointer 0` 应始终指向当前对象的基地址，以确保方法和字段访问的正确性。
+* ![image](https://github.com/user-attachments/assets/70719e03-d747-4291-89bf-c70164d161da)
+
+* constructor should always return this
+
+* Method 可以通过对象实例来调用（例如 `myVar.mySub(a,b)`），也可以在<i><u>**当前对象**</u></i>上下文中直接调用（例如 `mySub(a,b)`）。
+
+* On call layer, function and constructor do no extra deal. But methods will take the current object `myVar` as the first argument - `argument 0` and pass to method. Because method need to know it is called on which object
+
+* On start, Functions do no special deal. Constrcutors will set `this` pointer(the base address of this segment) to the new established object's base address. Methods will set this pointer set to current object `myVar` 
+
+* In the body, functions is boring. In constructors and methods , the segment of class `myClassVar` will be interpreted `this.myClassVar`, `myMethod(a)` will be interpreted into `this.myMethod(a)`.
+
+* In return, functions and methods is boring, return as expected. But, constructors will always return `this`, which is the reference of new established obejct.
+
+### Jack2VM - compiling <term>
+* When it is a simple constant or expression, push and generating related code in VM
+* When it is identifier or string literal -> search symbol table to make sure what kind of identifier it is (argument, local variable, static variables or a field with offset i)
+  * 如果它是带有偏移量 i 的参数，生成 push argument i。
+  * 如果它是带有偏移量 i 的变量，生成 push local i。
+  * 如果它是带有偏移量 i 的静态变量，生成 push static i。静态变量在类的所有对象中共享，因此即使在函数中也是有效的。
+  * 如果它是带有偏移量 i 的字段，那么要使它在 Jack 代码中有效，我们必须在方法或构造函数中。此时，它属于当前对象，该对象始终存储在 pointer 0。请记住，对象在 RAM 中存储为数组，第 i 个字段在位置 i 上——所以 push this i 就能完成这个工作。
+
+* <u>**如果它同时出现在类和子程序符号表中，则优先考虑子程序符号表。**</u>
+
+### Jack2VM - compiling <term> string literal
+如果 ⟨term⟩ 是一个字符串字面量，官方的 nand2tetris 编译方法是：
+  * 使用 String.new 创建一个具有合适最大长度的新字符串。
+  * 使用调用 String.appendChar 初始化字符串以匹配字面量。
+    * 将 C 字符转换为 Hack VM 整数以传递给 String.appendChar 很容易，因为 Hack 字符集与 ASCII 对齐（参见 Nisan 和 Schocken 的附录 5）——所以你只需将其强制转换为整数即可。
+  * 将新字符串的地址压入栈中。
+
+非官方的解决方案: 修改 Jack 语法
+
+```
+⟨term⟩ ::= integer literal | string literal | 'true' | 'false' | 'null' | 'this' | identifier, '[' ⟨expression⟩ ']' | '(' ⟨expression⟩ ')' | (('-' | '~') ⟨term⟩) | ⟨subroutineCall⟩;
+```
+
+```
+⟨letStatement⟩ ::= 'let', identifier, '[', ⟨expression⟩ ']', '=', ⟨expression⟩, ';' | string literal;
+```
+
+```
+⟨expressionList⟩ ::= [(⟨expression⟩) | string literal], {',' (⟨expression⟩ | string literal)}];
+
+```
+
+
+修改 Jack 语法：
+* 幻灯片建议对 Jack 语法进行修改，以更明确地包含字符串字面量的处理。通过在 ⟨letStatement⟩ 和 ⟨expressionList⟩ 中明确表示字符串字面量，编译器可以更好地控制这些字符串的管理和释放。
+  * 让 compile_expression_list 将字符串字面量参数列表传递回 compile_subroutine_call。
+  * 如果第一个参数是字符串字面量，将其再次压入栈中作为另一个参数，并适当增加调用命令的参数计数。
+  * 在生成 VM 调用命令后，函数参数仍将保留在栈上（在当前栈指针之上）。
+  * 检索所有字符串字面量并对它们调用 String.dispose。如果第一个参数是字符串字面量，则改为对最后一个参数调用 String.dispose。
+
+* 处理 ⟨letStatement⟩：
+  * 在编译 let 语句时，继续使用官方方法。这意味着如果用户显式地创建了一个指向字符串字面量的指针，那么用户有责任在合适的时机调用 String.dispose 来释放该字符串的内存。
+
+* 处理 ⟨expressionList⟩ 中的字符串字面量：
+  * 对于 ⟨subroutineCall⟩ 中的 ⟨expressionList⟩，幻灯片建议自动管理字符串字面量的释放。
+  编译器应通过 compile_expression_list 将字符串字面量的列表传递给 compile_subroutine_call，然后在生成 VM 调用命令后对这些字符串字面量调用 String.dispose 来释放它们的内存。
+  如果第一个参数是字符串字面量，编译器应该将其再次压入栈中作为另一个参数，并相应地增加调用命令的参数数量。
+
+* 潜在问题：
+  * 一个潜在问题是，第一个函数参数可能会在函数调用结束时被返回值覆盖。因此，建议在处理字符串字面量释放时，如果第一个参数是字符串字面量，则改为对最后一个参数调用 String.dispose，以避免覆盖问题。
+
+
 
 ### Binary Multiply Assembly
 
@@ -721,7 +853,7 @@ A = D
   - **函数返回时释放**: 栈上分配的内存是局部的，只有在函数调用结束后，这些内存才会被自动释放。
 
   - **编译时分配**: 如果变量的大小在编译时已经知道，就可以在栈上分配这些变量（例如，局部变量）。
-
+Translate it into Chinese and explain it more vividly and simple in Chinese. 
   - **指针的栈分配**: 在 C 语言中，局部变量包括指针通常是在栈上分配的。虽然指针的值（即内存地址）存储在栈上，但它们指向的内存（如果通过 `malloc()` 等方式分配）则可能在堆上。
 
 ![image](https://github.com/user-attachments/assets/7acb42b9-9d0b-49ee-94aa-509edea2ea01)
@@ -733,10 +865,57 @@ A = D
 
 
 ### Mock Theory
+![image](https://github.com/user-attachments/assets/8dbc8fb2-2106-48b4-8a70-d84f03cf090b)
+![image](https://github.com/user-attachments/assets/bbe76c4d-9ca8-4897-9b80-68e6374e7add)
 
+* Assembly do the label , VM just turn VM label into assembly label
+* malloc and free themselves can't defragment memory
 
+![image](https://github.com/user-attachments/assets/d4ac3564-3e16-4d1e-84bb-d5025c40dfdc)
 
+* Remember, an object in Jack is just a pointer, and is stored on the stack like any other variable. The memory it points to contains the object's fields and lives on the heap.
 
+![image](https://github.com/user-attachments/assets/0f91b6a5-ee63-4e9a-a2f4-6672f847df8f)
+![image](https://github.com/user-attachments/assets/9ad2795f-fdf1-499f-882b-04181bfa5db1)
+![image](https://github.com/user-attachments/assets/e56b3b83-9fd1-4cd5-911a-0df0e6f67367)
+
+* **The first address in segment**
+  * 用来表示段中可以使用的空间有多大。
+  * 假设一个段从地址 0x1106 到 0x759，计算可用空间后，得出总共是 0x9AE 个地址，<u>**但要减去 3 个用来存储段信息的地址**</u>，所以实际可用空间是 0x9AB。
+* **The second address in segment**
+  * 如果存的是 0x0000，表示这个段已经被使用；
+  * 如果是 0xFFFF，表示这个段是空闲的。
+* **The third and fourth address**
+  * If and only if this segment is free
+  * The third one is used for connecting previoud free segment
+  * The fourth one is used for connecting the afterward free segment
+
+* Calculate the size
+  * Last address - First address +1 - 3 = size
+* Revised Answer:
+  * a)0x9AB
+  * b)Impossible to tell
+  * c)Impossible to tell
+  * d)0xDF
+  * e)0x75B
+  * f)Impossible to tell
+  * g)Impossible to tell
+  * h)Correct answer not listed - 0x2FE
+
+![image](https://github.com/user-attachments/assets/228a1e9b-1958-4307-9954-00699df8493d)
+
+* Explanation from Blackboard:
+  * a) In order for lines 3 and 4 to be doing anything meaningful with "this", line 2 had better be setting it. With pop pointer 0, we set this 0 to the string's current length, this 1 to the string's maximum length, and this 2 to the base address of the string's array.
+
+  * b) We want to avoid crashing if the current length is less than the maximum length, i.e. if this 0 < this 1. The top of the stack will be "true" if and only if this 0 < this 1, and the function call to Sys.error is right between this and the nocrash label, so we should write "if-goto nocrash".
+
+  * c) We want to call Sys.error while passing only one value as an argument - namely the top value of the stack (52) - so we need to "call Sys.error 1".
+
+  * d) Remember that this 2 stores the base address of the string's array, and this 1 is the string's current length, i.e. the number of characters it contains. So the current string is stored in RAM[this 2], RAM[1 + this 2], ..., RAM[this 0 + this 2 - 1], and the new last character should be stored at address this 0 + this 2. That's at the top of the stack right now, so we should "push local 0" to store it where the comment tells us to.
+
+  * e) We've just transferred the address the new character should be stored at into pointer 1, which holds the base address of "that". So we can store the new character (which is argument 1) at this address with "pop that 0".
+
+  * f) We always have to return at the end of every function in Hack VM.
 
 
 
@@ -745,14 +924,18 @@ A = D
 视频3中的图灵机定义不考察。
 
 幻灯片中的其他内容（Church-Turing论文、图灵完备性和停机问题）考察，但仅限于幻灯片的内容深度。
+
 ### week 7：
 视频3-4中提到的特定CPU的具体细节（如每条指令所需的周期数或从内存中检索数据所需的纳秒时间）不考察。但你需要记住所有CPU共有的关键定性细节（如L3缓存访问比L1缓存访问慢）。
+
 ### week 8：
 Hack汇编语法考察，但不需要背诵定义——如果有相关问题，会提供EBNF的相关摘录。
 
 视频2最后一张幻灯片（关于使用多个符号表处理高级语言中的作用域）仅在与week 11内容重叠时考察。
+
 ### week 9：
 Hack VM语法考察，但不需要背诵定义——如果有相关问题，会提供EBNF的相关摘录。
+
 ### week 11：
 不需要知道如何用Jack编程，不会问Jack语言的细节，也不会要求阅读、编写或调试Jack代码。但你需要理解将高级语言编译成Hack VM的基本原理，具体到Jack中探讨的程度。例如，你需要知道什么是方法，可能会被问到将方法编译成Hack VM的过程，但不会要求阅读、编写或调试Jack中的方法声明。
 
