@@ -529,11 +529,11 @@ In parsing, for each identifier we find, we check the symbol tables:
 
 ### Hack Jack Memory
 
-* Memory.alloc
+* `Memory.alloc`
 
-* Memory.deAlloc
+* `Memory.deAlloc`
 
-* Sys.init
+* `Sys.init`
 
 * From inside a method definition, the fields of the class variable act as local variables. (This replaces C-style myFoo.x syntax.) The class variable itself can also be accessed via the this keyword, and `methodCall()` is interpreted as `this.methodCall()`.
 
@@ -570,6 +570,37 @@ In parsing, for each identifier we find, we check the symbol tables:
 * Jack文件可以使用在其他Jack文件中定义的类。
 
 * 编译器会假设这些类可用，并且假设所使用的方法也会存在。
+
+* newlines are <u>***not***</u> tokens in Jack! Like in C, they’re just whitespace.
+
+* all variables must be declared at the start of a class
+
+* Jack is an LL(2) language
+
+* 在解析我们的 token 列表时，我们将维护两个 token 指针：`current` 和 `lookahead`。始终 `current` 是我们尚未解析的第一个 token，`lookahead` 是第二个 token。
+
+* Hack Jack 在VM层面的处理
+
+  * **Local Segment (`local`)**:
+    - 变量通过 `var` 声明后，会存储在 `local` 段中。具体来说，这些变量通常是在子程序体（`subroutineBody`）的开始部分声明的，属于局部变量。
+
+  * **Argument Segment (`argument`)**:
+    - 函数参数会存储在 `argument` 段中。这些参数通常在子程序声明（`subroutineDec`）中的参数列表（`parameterList`）部分被声明。
+
+  * **Static Segment (`static`)**:
+    - 使用 `static` 声明的变量会存储在 `static` 段中。这些变量是静态变量，通常在类的开始部分（`classVarDec`）声明，属于类级别的变量。
+
+  * **This Segment (`this`)**:
+    - 使用 `field` 声明的变量会存储在 `this` 段中。`field` 声明的变量属于实例变量，即属于对象本身。它们通常在类的开始部分（`classVarDec`）声明。
+
+  * **That Segment (`that`)**:
+    - `that` 段通常用于编译涉及数组或字段变量的表达式时。它和 `this` 段一起使用，`this` 用于字段变量，`that` 用于处理数组索引的情况。
+
+  * **Temp Segment (`temp`)**:
+    - `temp` 段用于临时存储数据，特别是在编译单个语句时，需要临时保存中间结果。
+
+  * **Pointer and Constant Segments**:
+    - `pointer` 和 `constant` 段的用途已经很明确：`pointer` 用于处理内存指针，`constant` 用于处理常量值。
 
 ### Binary Multiply Assembly
 
