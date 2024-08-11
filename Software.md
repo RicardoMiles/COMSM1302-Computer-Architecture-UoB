@@ -248,9 +248,321 @@ In parsing, for each identifier we find, we check the symbol tables:
 ### Track scope
 作用域 - 是一张又一张独立的symbol table
 
-###
+
+
+### VM syntax detail
+
+* **Compilers for many languages can and do use the same IR.**
+* Goals of VM
+  * Implement function calls! (Next week...)
+  * Proper compile-time memory allocation! (Next week...)
+  * Multi-file compilation support for libraries. (Next week...)
+* The Hack VM is an example of a stack machine
+   * create
+   * push
+   * pop
+
+	* Stacks are **LIFO**: “Last In, First Out”.
+	* Hack **Assembly** use **physical memory** — every memory address is the exact logical signal sent to a physical latch on a physical chip, either ROM or RAM.
+	* Hack **VM(IR)** use **virtual memory.**
+	* push with the command **push [memory] [address].**
+ * The **Hack VM has 8(!) separate virtual memory banks**, which our VM translator will map to different segments (continuous blocks) of the underlying RAM.
+   * **local** is general-purpose storage for local variables. 
+   * **constant** holds the constant i at each 15-bit address i. This “memory” is read-only and doesn’t correspond to any physical ROM or RAM.
+ * The Hack VM represents a result of true by 0xFFFF, and false as 0x0000\
+ * For operations that pop two values, **y is the first value popped and x is the second value.** E.g. push constant 3, push constant 1, sub will end with 2 on top of the stack rather than −2
+
+
+
+### VM branching
+
+* Syntax for goto:
+
+  * **label LABEL NAME** declares a label at that point of the code. 
+  * **goto LABEL NAME** jumps to that label from anywhere in the code.
+  * **if-goto LABEL NAME** pops the stack and executes goto LABEL NAME if the result is non-zero (i.e. if it is not false).
+
+* **if-goto** in the same way that we would use **D;JNE** in assembly. 
+
+  The differences are: 
+
+  * The value we compare to zero is the top of the stack instead of D. 
+  * We have proper logical operators gt, eq, lt, and, or and not built into the language to replace the various jump conditions.
+
+* ***this*** segment can only be used to access RAM[0x0800–0x3FFF]； For anything outside that, we must instead use the **that** memory segment.
+
+* ***that*** maps range  0 to RAM[pointer 1]
+
+* 在函数调用开始时，***local***段是空的，其内容将在函数返回时被丢弃。
+
+* 在函数调用开始时，***argument***段将保存该调用的参数。此段不能被写入。
+
+* ***static***段的内容在函数调用之间保持不变（它将用于稍后在高级语言中处理静态和全局变量）。
+
+* ***temp*** 的行为与***local***相同，但被映射到更小的内存区域。它被设计为“工作空间”，供编译器在从高级语言编译单个指令时使用，而不需要干扰local的内容。
+
+
+
+### Hack VM Tokens
+
+![image](https://github.com/user-attachments/assets/fa42eecb-8618-4ef4-b1f3-5da32adaea20)
+
+### Memory and the Stack
+
+* base addrss和offset这组概念非常重要，local后的数字就是偏移量offset，没有一个local地址都是mapped to基地址加上offset
+
+* Hack 虚拟机的每个八个虚拟内存段都连接有 64KB 的内存（以 32,768 个 16 位字组成）。另外，它还有一个可以无限增长的堆栈。Hack CPU 总共支持 64KB 的内存。因此，某些东西必须有所取舍。
+
+* HACK assembly key word
+
+  * 局部变量段（local）的基地址存储在 `RAM[1]` 中，即 `LCL`。
+
+  * 参数段（argument）的基地址存储在 `RAM[2]` 中，即 `ARG`。
+
+  * 指针段（pointer）被分配了长度为 2 的固定段，基地址为 3。所以：
+
+  - `this` 的基地址（即 `pointer 0`）存储在 `RAM[3]` 中，即 `THIS`。
+  - `that` 的基地址（即 `pointer 1`）存储在 `RAM[4]` 中，即 `THAT`。
+
+  * 临时段（temp）被分配了长度为 8 的固定段，基地址为 5。
+
+  * 静态段（static）被分配了长度为 240 的固定段，基地址为 16。
+
+  - 如果编译文件 `Foo.vm`，则地址 `static 5` 应该映射到 Hack 汇编变量 `Foo.5`。（解释将在下周进行！）
+
+  * 常量段（constant）不会出现在物理内存中。
+
+* 堆栈顶部一个字（word）之后的地址存储在 `RAM[0]` 中，即 `SP`（SP 代表堆栈指针）。
+
+  当我们将一个新值 `x` 压入堆栈时，我们将 `x` 写入 `RAM[SP]`，然后递增 `SP`。
+
+  当我们将一个值从堆栈弹出并存入 `RAM[i]` 时，我们先递减 `SP`，然后将 `RAM[SP]` 的值复制到 `RAM[i]`。
+
+* **堆栈指针（SP）**：堆栈顶部一个字之后的地址存储在 `RAM[0]` 中，这个位置称为堆栈指针（SP）。它指向堆栈的下一个空闲位置，表示下一个值应该放置在哪里。
+
+
+
+### Extending VM by Function Call - Flow Control
+
+* On function return: Program flow returns to the line after the original function call. The local variables x and y return to their old values. The argument variable n returns to its old values. The static variables times called and layers deep are unchanged
+
+* Function call goal
+
+  * 目标 1：程序流程。在函数调用时，我们应该跳转到函数的开始。在函数返回时，我们应该跳回到调用的地方。
+
+  * 目标 2：内存分配。在函数调用时，我们应该为新的局部变量和参数变量分配内存。在函数返回时，我们应该释放这些内存。
+
+  * 目标 3：程序状态。在函数调用时，我们应该保存所有现有的局部变量、参数变量和大多数寄存器值，并用新的值替换它们。在函数返回时，我们应该恢复它们，使其保持不变。
+
+  * 目标 4：静态变量不应受到函数调用和返回的影响。
+
+* 因为Hack VM层面才有stack，hack assembly层面没有stack，但还是用栈思想来设计functioncall的流程控制
+
+* Function call时 store the address to stack, push the address to stack, then jump;On return, pop the return address from the stack, then jump to it
+
+
+
+### Memory Allocation 
+
+* 编译器需要： 每次调用函数时，为已知数量的已知大小的局部/参数变量找到空间。
+
+* 假设每个变量占用一个字的存储空间，我们将参数存储在底部，然后是局部变量，然后是程序状态。（具体顺序其实并不重要。） 对第 i 个参数变量的引用变为对 `RAM[OSP + i]` 的引用。 对第 i 个局部变量的引用变为对 `RAM[OSP + 7 + i]` 的引用。
+
+* 我们将需要压入栈中的程序状态部分（例如返回地址、旧的 OSP 值、旧的寄存器值）称为调用函数的调用帧（call frame），或简称为帧（frame）。在上一张幻灯片中，我们称其为“旧状态”。
+
+  程序仍然可以使用栈的顶部部分作为在函数内部进行算术操作的工作存储空间。我们将这个子栈称为工作栈（working stack），并将整个栈（包括所有过去的调用帧）称为全局栈（global stack）
+
+* 所有的算数都使用二进制补码 2‘s complement
+
+* frame 帧
+
+* call frame 调用帧
+
+* push到stack上的旧的Program State被称为call frame
+
+* global stack全局栈
+
+* 函数内部仍可用的stack顶部的sub stack叫做working stack
+
+* 调用子函数时当前的working stack 回合其余旧的state一起保存
+
+* 不同阶段的SP - 假设function f 会用10 word的局部变量， 7 word参数变量和 5 word 当前程序状态
+
+  * Call function
+
+    将当前的SP存在一个register中，作为Old Stack Pointer - OSP；
+
+    将SP value +=10，因为架设了call 一次用10个word局部变量
+
+    再将SP value +=12（5 word program state 7word argument），依次将Program State 和arguments塞进stack
+
+    然后跳转到function label
+
+  * Function execute
+
+    将  arguments,  local,  program state 自下而上存储
+
+    对第 i 个参数变量的引用变为对 `RAM[OSP + i]` 的引用。
+
+    对第 i 个局部变量的引用变为对 `RAM[OSP + 7 + i]` 的引用。（因为7个argument是预设的）
+
+  * Function return 
+
+    存储返回值 optional
+
+    将SP重新设为OSP
+
+    将之前的Program State复制到寄存器
+
+    跳转到返回地址（从Stack里取出的）
+
+    Optional对返回值进行操作
+
+### Hack VM function call syntax
+
+* The syntax to return from a function is `return`, which returns the top value of the stack.
+* The syntax to call a function is `call name x`, where `name` is the function’s name and `x` is the number of arguments to use. This pops the top x values of the stack
+* The syntax to define a function is `function name x`, where `name` is the function’s name and `x` is the size of the function’s local segment
+
+
+
+### Function Declaration in VM to Assembly
+
+假设我们的虚拟机翻译器遇到了代码行 `function myFunc 3`。在右侧，我们继续上张幻灯片的例子。我们生成的汇编代码必须：
+
+1. **生成标签：**
+
+   * 每当虚拟机翻译器遇到一个函数声明时，首先要生成一个标签（label），该标签用于标识函数的入口点。在汇编代码中，这个标签将是函数开始执行的位置。
+
+   * 这个标签通常可以直接从函数名推导出来，这样就不需要额外的符号表来管理标签和函数名之间的映射
+
+2. **设置栈指针（SP）：**
+
+   * 函数执行时需要为局部变量分配内存空间。这里的指令将栈指针（SP）设置为局部变量段（LCL）加上局部变量的数量（3）。这一步为函数的局部变量分配了必要的栈空间。
+
+3. **初始化局部变量：**
+
+   * 在栈中为局部变量分配空间后，需要将这些变量初始化为零。这里具体提到初始化 `local 0`、`local 1` 和 `local 2`，因为函数声明中指定了 3 个局部变量。
+
+4. **进入函数的实际代码：**
+
+   * 完成标签生成、栈指针设置和局部变量初始化后，程序就可以进入实际的函数代码进行执行了。这个步骤相当于函数的主要功能部分开始运行。
+
+### Function Return in VM to Assembly
+
+**存储返回地址：**
+
+- 在函数返回之前，程序需要知道要跳转到哪里，这就是返回地址。通常，返回地址会保存在调用函数时的栈中。为了便于后续操作，返回地址会暂时存储在一个寄存器中，例如 R13。
+
+**复制返回值：**
+
+- 函数的返回值通常存储在栈顶。当函数即将返回时，程序会将这个返回值复制到新的工作栈的位置，即当前 `ARG` 的位置。这是因为 `ARG` 是调用函数时的参数存储位置，当函数返回时，返回值将覆盖最初的参数位置。
+
+**调整栈指针（SP）：**
+
+- 接下来，将栈指针 `SP` 设置为新工作栈的顶部，即 `ARG + 1`。这意味着栈顶现在指向了返回值的上方，准备在返回后进行新的操作。
+
+**恢复旧状态：**
+
+- 在调用函数之前，程序会保存一些关键的状态信息（如 `THAT`、`THIS`、`ARG` 和 `LCL`）在栈中。在函数返回时，这些状态需要恢复，以确保返回后程序能继续正常运行。恢复的过程是从当前 `LCL` 值开始，向下遍历栈，依次恢复这些寄存器的值。
+
+**跳转到返回地址：**
+
+- 最后，程序跳转到返回地址，完成函数的返回操作。这一步同时丢弃了 `SP` 以上的所有栈内容，因为这些内容在函数返回后已经不再需要。
+
+
+
+### First Attempt Note Miscs
+
+* **函数调用**: 在汇编语言中，你需要手动处理函数调用。通常，这包括将返回地址（通常是下一条指令的地址）放入 A 寄存器，然后使用 **D=A; @SP; A=M; M=D; @SP; M=M+1** 将其推入栈中，然后使用 **@****函数名** 和 **0;JMP** 来跳转到函数的开始位置。
+
+* **函数返回**: 在函数的末尾，你需要从栈中弹出返回地址并跳转回去。这通常是通过 **@SP; M=M-1; A=M; 0;JMP** 来完成的。
+
+* 在函数调用时，`**LCL**`会被设置为当前的`**SP**`值，因为新的局部变量将从当前栈顶开始被分配。
+
+  - **SP**是栈指针，它指向栈顶的下一个位置，即下一个将要被推入的值的位置。
+
+  - 在函数调用时，**SP**会递增，因为我们要将返回地址（标签）、**LCL**、**ARG**、**THIS**和**THAT**推入栈中。
+
+  - 在函数返回时，SP会被重置回ARG + n的位置，其中n是函数返回值的数量（通常是1）
+
+
+ 
+
+* 在函数调用时，`**ARG**`会被设置为`**SP - n - 5**`的位置，其中`**n**`是传递给函数的参数数量。”-5”是因为在推入参数之前，栈中已经包含了保存的`**LCL**`、`**ARG**`、`**THIS**`和`**THAT**`，以及返回地址。
+
+* 当我们将一个新值x推入栈时，我们将x写入RAM[SP]，然后增加SP。
+
+* 当我们从栈中弹出一个值到RAM[i]时，我们减少SP，然后复制RAM[SP]到RAM[i]
+
+* 在写VM代码时function名必须包含文件名，比如文件叫Sum.vm 则 function Sum.sum 1
+
+  
+
+### Function Call 在VM栈以及Assembly层面的同步解读
+
+* 开始call的时候Assembly要以一个label结束，一遍后续return的时候可以回到这个ROM地址
+* 在VM层面塞这个label（return address在Nand2课程的slides里）进入栈顶
+* 再将Assembly里面 LCL ARG THIS THAT的value依次塞进栈顶；其实也就是将四个段的基地址指针存入Stack
+  * LCL RAM[1]  local segment的基地址&起始地址
+  * ARG RAM[2]  argument segment 的基地址&起始地址
+  * RAM[Pointer 0] - RAM[RAM[3]] this segment 的基地址&起始地址
+  * RAM[Pointer 1] - RAM[RAM[4]]  that segment 的基地址&起始地址
+* 结合例子来看 call function 2 会将此刻stack 顶上两个弹出并发送给function
+  * step 1 建call frame 调用帧 - 搞个label回头可以return跳回来 - 把标签名push进stack
+  * step 2 保存当前program state - push LCL ARG THIS THAT 进stack ； Assembly层面需要复制这些值进stack内存（RAM[256]开始的栈内存）到这为止， SP仍然指向标签的地址，两个实参地址肯定就在SP当前的地址（label）下面的两个，然后我们通过操作SP值来得到实参地址来访问实参，在Assembly层面把访问得到的地址值设为new ARG  
+  * step3 因为已知call frame从local variable开始，所以讲SP+5（四个旧状态，sp定义为栈顶+1）
+  * step4 现在的SP就是New LCL
+  * 最后jump到函数定义时的标签，以function Myfunc 3（3代表local variable数量，也就是local段长度）为例，这时将等值的SP和LCL同时+3留下重组空间，并且把三个local variable初始化为0
+* Return时
+  * return value存在top of stack （VM视角）； 在Assembly层面暂时将它存到一处（比如R13， R13-R15是VM暂存段的范围）
+  * 在Vm层面上，下一步是将这个return value复制到 old stack上，到caller stack上，来替代<u>最底层</u>的argument（函数调用时push进栈以供利用的那个，对这个被调用的子函数来说，是bottommost的），也就是当前ARG指向的
+  * 如果函数设计上没有argument，那么这个return value有覆写return label return address的可能性。
+  * 老的ARG也好OSP也好，其地址都是从现LCL往回计算得到的（砍回其下的Old THAT THIS ARG LCL）
+  * 销毁掉局部段，SP变为OSP，set it into ARG+1
+
+```assembly
+
+```
+
+
+
+### Binary Multiply Assembly
+
+
+
+## From Nand 2 Tetris OG
+
+### Stack
+
+![image-20240810001621526 - 副本](https://github.com/user-attachments/assets/b61a6af4-e05e-4d76-87ed-1648713625c1)
+
+### Function Call
+
+![image](https://github.com/user-attachments/assets/7f3c4340-9b3a-4644-ba68-b09999226a86)
+
+![image-20240810131433769](https://github.com/user-attachments/assets/121219c8-7702-4785-aa9d-189c19d260f4)
+
+![image](https://github.com/user-attachments/assets/c277f286-9559-4883-9c80-ae3569de05d3)
+
+* 注意看这个具体实现，包括了call 和 return
+* Saved frame是一系列指针
+* 执行完毕， the top of callee stack 也就是return value 会覆盖到 argument 0的位置，sp重置为 argument 0那个位置 +1，然后，属于callee function的东西全部就销毁了， LCL ARGS THIS THAT这些指针全部恢复原来值，那个saved frame被读档了
+
+![image](https://github.com/user-attachments/assets/8ea80e1c-3bc9-4b3b-8187-d217616be39f)
+
+
+
+![image](https://github.com/user-attachments/assets/96649795-ec13-40d2-a4ee-e624d3b8a042)
+
+![image](https://github.com/user-attachments/assets/319304a6-9cf2-47ed-8042-2c8f0d9d268f)
+
+
+
+![image](https://github.com/user-attachments/assets/6d727480-d31f-4060-b63f-cbf379db702e)
 
 ## Quiz Error Book
+
 ### Quiz 5
 ![image](https://github.com/user-attachments/assets/827b266c-6462-49c5-aacb-37379a6515c6)
 
@@ -287,6 +599,60 @@ A = D
 
 ### Quiz 8
 
+![image](https://github.com/user-attachments/assets/2944a6ae-777d-44ec-841c-e324f29bb81b)
+
+![image](https://github.com/user-attachments/assets/b95fa631-4b03-4e86-b3df-524d949db5e5)
+
+![image-20240811000511707](C:\Users\Ricardo\AppData\Roaming\Typora\typora-user-images\image-20240811000511707.png)
+
+* 都是同一类型的VM 层面的stack计算问题
+* sub操作是先push的减去后push的
+
+![image-20240811000817827](C:\Users\Ricardo\AppData\Roaming\Typora\typora-user-images\image-20240811000817827.png)
+
+* 一方面需要死记硬背
+* 一方面需要理清重要的概念：This段是RAM[pointer 0]；that 段是 RAM[pointer 1]
+* temp segment max size 8
+* 大写的LCL ARG THIS THAT 本质都是一个地址一个指针，我们从里面得到的是地址，所以要把这些东西塞进RAM[ ? ] 去找内存段真正的值
+* R5- R12 用来存temp值只能死记硬背
+
+![image](https://github.com/user-attachments/assets/59eba210-64ca-480b-a286-ae6b331dc0c2)
+
+* The global stack now spans RAM[256] - RAM[308], so 53 values.王牌做题技巧，就是直接从RAM[256]这个stack段的基地址开始摁数
+
+* Solution Diagram shows below
+
+  ![76C79A66-C574-475F-896B-453D8A182134](https://github.com/user-attachments/assets/07768c95-5b5b-4b32-add3-d62953452411)
+
+![image](https://github.com/user-attachments/assets/90ab8c25-2834-42ec-b710-adffa48036b7)
+
+* Hack VM 程序的栈有一个固定的大小，每次递归调用都会消耗栈上的一部分空间。每个函数调用至少需要 5 个字的栈空间，而栈从地址 256 开始。经过 360 次递归调用后，栈指针的位置将达到 256 + 360*5 = 2056，这超出了栈的限制，导致栈溢出，进入了从地址 2048 开始的堆空间。
+* 在将 VM 代码翻译成汇编代码时，VM 翻译器只是将标签转换为汇编标签，并不管理汇编代码中的 ROM 地址。地址管理工作由Assembler完成，而不是 VM 翻译器。
+* 不同的编程语言可以使用相同的中间表示（IR）
+* 在 Hack VM 中，函数的命名遵循文件名的基础名称（不包括 ".vm" 扩展名），后面跟一个点和一个描述性的函数名称。例如，如果文件名是 `Example.vm`，那么函数名可能是 `Example.functionName`
+
+![image](https://github.com/user-attachments/assets/0722952f-3208-4233-bb66-62fa0bd3409a)
+
+* **堆内存管理**:
+
+  - **手动释放**: 堆上分配的内存不会自动释放，必须由程序员使用 `free()` 函数来手动释放。
+
+  - **运行时分配**: 如果你在程序运行过程中才知道变量的大小，就需要在堆上分配内存（例如，通过 `malloc()`）。
+
+  - **长度未知的字符串**: 在 C 语言中，如果你处理的字符串长度在编译时不知道（例如，通过用户输入获取的字符串），它们会在堆上分配内存。
+
+* **栈内存管理**:
+
+  - **函数返回时释放**: 栈上分配的内存是局部的，只有在函数调用结束后，这些内存才会被自动释放。
+
+  - **编译时分配**: 如果变量的大小在编译时已经知道，就可以在栈上分配这些变量（例如，局部变量）。
+
+  - **指针的栈分配**: 在 C 语言中，局部变量包括指针通常是在栈上分配的。虽然指针的值（即内存地址）存储在栈上，但它们指向的内存（如果通过 `malloc()` 等方式分配）则可能在堆上。
+
+![image](https://github.com/user-attachments/assets/7acb42b9-9d0b-49ee-94aa-509edea2ea01)
+![image](https://github.com/user-attachments/assets/5f9c401a-67fe-4c3b-add2-2eddf51cde46)
+
+* local变量一有子函数调用它就清零了，所以从头至尾只有静态段的static 0一直在*2，在调用了三次的子函数中每次翻倍后都是和被进入子函数调用而归零的local 0相加，也就是翻了八倍。
 
 ### Quiz 9
 
