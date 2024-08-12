@@ -1,0 +1,23 @@
+push constant 9
+pop argument 0
+push argument 0
+pop local 0
+push constant 0
+pop local 1
+label A
+push local 0
+push constant 0
+eq
+if-goto B
+push local 1
+push argument 0
+add
+pop local 1
+push local 0
+push constant 1
+sub
+pop local 0
+goto A
+label B
+push local 1
+return
