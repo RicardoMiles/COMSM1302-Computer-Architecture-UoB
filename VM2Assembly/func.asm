@@ -4,17 +4,20 @@ D=A
 @SP
 A=M
 M=D
+
 @LCL
 D=M
 @SP
 A=M+1
 M=D
+
 @ARG
 D=M
 @SP
 A=M+1
 A=A+1
 M=D
+
 @THIS
 D=M
 @SP
@@ -22,6 +25,7 @@ A=M+1
 A=A+1
 A=A+1
 M=D
+
 @THAT
 D=M
 @SP
@@ -30,6 +34,7 @@ A=A+1
 A=A+1
 A=A+1
 M=D 
+
 D=A+1 // Update LCL
 @LCL
 M=D
@@ -185,14 +190,18 @@ D=M
 @SP
 A=M-1
 M=M-D
+
 // Return
-@5 // Store return address in R13
+// Store return address in R13
+@5 
 D=A
 @LCL 
 A=M-D
 D=M
 @R13
 M=D
+
+
 @SP // Copy return value to argument 0, NB this may overwrite
 A=M-1 // return address if argument has length 0
 D=M
